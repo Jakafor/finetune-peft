@@ -5,8 +5,10 @@
 # LICENSE file in the root directory of this source tree.
 from functools import partial
 from pathlib import Path
-import urllib.request
+from urllib.request import urlretrieve
 import torch
+import hashlib, os
+from torch.hub import download_url_to_file
 
 from .modeling import (
     ImageEncoderViT,
@@ -17,8 +19,42 @@ from .modeling import (
     TinyViT,
 )
 
+CKPTS = {
+    "vit_b": ("sam_vit_b_01ec64.pth",
+              "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth",
+              "01ec64"),  # optional short tag – or full sha256 if you want
+    "vit_l": ("sam_vit_l_0b3195.pth",
+              "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_l_0b3195.pth",
+              "0b3195"),
+    "vit_h": ("sam_vit_h_4b8939.pth",
+              "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth",
+              "4b8939"),
+}
+
+def _ensure_ckpt(path: Path, url: str, sha256: str | None = None) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        return path
+    tmp = path.with_suffix(path.suffix + ".part")
+    # hash_prefix can be a full sha256 string; it just checks that the file's sha256 starts with it
+    download_url_to_file(url, str(tmp), hash_prefix=(sha256 or ""), progress=True)
+    os.replace(tmp, path)
+    return path
+
+def _safe_load(path):
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    with open(path, "rb") as f:
+        return torch.load(f, map_location=device)
+    
+#######################################################################################################################
+
 
 def build_sam_vit_h(args = None, checkpoint=None, num_classes = 1):
+    if checkpoint is None:
+        name, url, _ = CKPTS["vit_h"]
+        checkpoint = Path(os.path.expanduser("~/.cache/segment_anything")) / name
+        _ensure_ckpt(checkpoint, url)
+
     return _build_sam(
         args,
         encoder_embed_dim=1280,
@@ -34,6 +70,11 @@ build_sam = build_sam_vit_h
 
 
 def build_sam_vit_l(args, checkpoint=None, num_classes = 1):
+    if checkpoint is None:
+        name, url, _ = CKPTS["vit_l"]
+        checkpoint = Path(os.path.expanduser("~/.cache/segment_anything")) / name
+        _ensure_ckpt(checkpoint, url)
+
     return _build_sam(
         args,
         encoder_embed_dim=1024,
@@ -46,6 +87,11 @@ def build_sam_vit_l(args, checkpoint=None, num_classes = 1):
 
 
 def build_sam_vit_b(args, checkpoint=None, num_classes = 1):
+    if checkpoint is None:
+        name, url, _ = CKPTS["vit_b"]
+        checkpoint = Path(os.path.expanduser("~/.cache/segment_anything")) / name
+        _ensure_ckpt(checkpoint, url)
+
     return _build_sam(
         args,
         encoder_embed_dim=768,
@@ -177,47 +223,15 @@ def _build_sam(
     )
     sam.eval()
         
-    checkpoint = Path(checkpoint)
-    if checkpoint.name == "sam_vit_b_01ec64.pth" and not checkpoint.exists():
-        cmd = input("Download sam_vit_b_01ec64.pth from facebook AI? [y]/n: ")
-        if len(cmd) == 0 or cmd.lower() == 'y':
-            checkpoint.parent.mkdir(parents=True, exist_ok=True)
-            print("Downloading SAM ViT-B checkpoint...")
-            urllib.request.urlretrieve(
-                "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth",
-                checkpoint,
-            )
-            print(checkpoint.name, " is downloaded!")
-    elif checkpoint.name == "sam_vit_h_4b8939.pth" and not checkpoint.exists():
-        cmd = input("Download sam_vit_h_4b8939.pth from facebook AI? [y]/n: ")
-        if len(cmd) == 0 or cmd.lower() == 'y':
-            checkpoint.parent.mkdir(parents=True, exist_ok=True)
-            print("Downloading SAM ViT-H checkpoint...")
-            urllib.request.urlretrieve(
-                "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth",
-                checkpoint,
-            )
-            print(checkpoint.name, " is downloaded!")
-    elif checkpoint.name == "sam_vit_l_0b3195.pth" and not checkpoint.exists():
-        cmd = input("Download sam_vit_l_0b3195.pth from facebook AI? [y]/n: ")
-        if len(cmd) == 0 or cmd.lower() == 'y':
-            checkpoint.parent.mkdir(parents=True, exist_ok=True)
-            print("Downloading SAM ViT-L checkpoint...")
-            urllib.request.urlretrieve(
-                "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_l_0b3195.pth",
-                checkpoint,
-            )
-            print(checkpoint.name, " is downloaded!")
 
     #print(sam)
     if checkpoint is not None:
-        with open(checkpoint, "rb") as f:
-            state_dict = torch.load(f,map_location='cuda:0')
+        state_dict = _safe_load(checkpoint)
         try:
-            sam.load_state_dict(state_dict, strict = False)
-        except:
-            new_state_dict = load_from(sam, state_dict, image_size, vit_patch_size)
-            sam.load_state_dict(new_state_dict)
+           sam.load_state_dict(state_dict, strict=False)
+        except Exception:
+           new_state_dict = load_from(sam, state_dict, image_size, vit_patch_size)
+           sam.load_state_dict(new_state_dict)
             
     
     if args.if_split_encoder_gpus:
