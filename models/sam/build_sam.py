@@ -7,6 +7,7 @@ from functools import partial
 from pathlib import Path
 from urllib.request import urlretrieve
 import torch
+import torch.nn.functional as F
 import hashlib, os
 from torch.hub import download_url_to_file
 
