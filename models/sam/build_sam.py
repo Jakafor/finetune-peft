@@ -30,6 +30,9 @@ CKPTS = {
     "vit_h": ("sam_vit_h_4b8939.pth",
               "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth",
               "4b8939"),
+    "vit_t": ("mobile_sam.pt",
+              "https://raw.githubusercontent.com/ChaoningZhang/MobileSAM/master/weights/mobile_sam.pt",
+              None),
 }
 
 def _ensure_ckpt(path: Path, url: str, sha256: str | None = None) -> Path:
@@ -46,6 +49,21 @@ def _safe_load(path):
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     with open(path, "rb") as f:
         return torch.load(f, map_location=device)
+    
+def _as_state_dict(obj):
+    """
+    Return a pure {str: Tensor} state_dict whether the checkpoint is raw or wrapped.
+    """
+    import torch as _torch
+    if isinstance(obj, dict) and all(isinstance(v, _torch.Tensor) for v in obj.values()):
+        return obj
+    if isinstance(obj, dict):
+        for k in ("state_dict", "model", "model_state", "model_state_dict", "net", "module", "sam"):
+            sd = obj.get(k)
+            if isinstance(sd, dict) and all(isinstance(v, _torch.Tensor) for v in sd.values()):
+                return sd
+    raise ValueError("Could not find a state_dict in checkpoint")
+
     
 #######################################################################################################################
 
@@ -104,6 +122,12 @@ def build_sam_vit_b(args, checkpoint=None, num_classes = 1):
     )
 
 def build_sam_vit_t(args, checkpoint=None,  num_classes = 1):
+
+    if checkpoint is None:
+        name, url, _ = CKPTS["vit_t"]
+        checkpoint = Path(os.path.expanduser("~/.cache/segment_anything")) / name
+        _ensure_ckpt(checkpoint, url)
+        
     prompt_embed_dim = 256
     #image_size = 1024
     vit_patch_size = 16
@@ -149,11 +173,11 @@ def build_sam_vit_t(args, checkpoint=None,  num_classes = 1):
     mobile_sam.eval()
     #print(mobile_sam)
     if checkpoint is not None:
-        with open(checkpoint, "rb") as f:
-            state_dict = torch.load(f)
-        try:
+       state_obj = _safe_load(checkpoint)
+       state_dict = _as_state_dict(state_obj)
+       try:
             mobile_sam.load_state_dict(state_dict, strict = False)
-        except:
+       except:
             new_state_dict = load_from_mobile(mobile_sam, state_dict)
             mobile_sam.load_state_dict(new_state_dict)
     return mobile_sam
