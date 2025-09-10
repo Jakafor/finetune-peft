@@ -12,9 +12,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
-from timm.models.layers import DropPath as TimmDropPath,\
+from timm.layers import DropPath as TimmDropPath,\
     to_2tuple, trunc_normal_
-from timm.models.registry import register_model
+from timm.models import register_model
 from typing import Tuple
 from .common import LayerNorm2d, MLPBlock, Adapter
 from einops import rearrange
@@ -388,31 +388,31 @@ class TinyViTBlock(nn.Module):
             nH = pH // self.window_size
             nW = pW // self.window_size
 
-            if self.args.thd:
-                D = self.args.depth
-                nb = B//D
-                #print('add 3D branch')
-                pad_d = (self.window_size - D %
-                     self.window_size) % self.window_size
-                pD = D+ pad_d
-                nD = pD // self.window_size
-                padding = pad_d>0
-                xdw = rearrange(x, '(b d) h w c -> (b h) d w c ', d=self.args.depth)
-                if padding:
-                    xdw = F.pad(xdw, (0, 0, 0, 0, 0, pad_d))
-                #print('xdw:',xdw.shape)
-                xdw = xdw.view(nb*pH, nD, self.window_size, nW, self.window_size,C).transpose(2, 3).reshape(nb*pH*nD*nW,self.window_size * self.window_size, C)
-                #print('xdw:',xdw.shape)
-                xdw = self.attn(xdw)
+            # if self.args.thd:
+            #     D = self.args.depth
+            #     nb = B//D
+            #     #print('add 3D branch')
+            #     pad_d = (self.window_size - D %
+            #          self.window_size) % self.window_size
+            #     pD = D+ pad_d
+            #     nD = pD // self.window_size
+            #     padding = pad_d>0
+            #     xdw = rearrange(x, '(b d) h w c -> (b h) d w c ', d=self.args.depth)
+            #     if padding:
+            #         xdw = F.pad(xdw, (0, 0, 0, 0, 0, pad_d))
+            #     #print('xdw:',xdw.shape)
+            #     xdw = xdw.view(nb*pH, nD, self.window_size, nW, self.window_size,C).transpose(2, 3).reshape(nb*pH*nD*nW,self.window_size * self.window_size, C)
+            #     #print('xdw:',xdw.shape)
+            #     xdw = self.attn(xdw)
 
-                xdh = rearrange(x, '(b d) h w c -> (b w) d h c ', d=self.args.depth)
-                if padding:
-                    xdh = F.pad(xdh, (0, 0, 0, 0, 0, pad_d))
+            #     xdh = rearrange(x, '(b d) h w c -> (b w) d h c ', d=self.args.depth)
+            #     if padding:
+            #         xdh = F.pad(xdh, (0, 0, 0, 0, 0, pad_d))
 
-                #print('xdh:',xdh.shape)
-                xdh = xdh.view(nb*pW, nD, self.window_size, nH, self.window_size,C).transpose(2, 3).reshape(nb*pW*nD*nH,self.window_size * self.window_size, C)
-                xdh = self.attn(xdh)
-                #print('xdh:',xdh.shape)
+            #     #print('xdh:',xdh.shape)
+            #     xdh = xdh.view(nb*pW, nD, self.window_size, nH, self.window_size,C).transpose(2, 3).reshape(nb*pW*nD*nH,self.window_size * self.window_size, C)
+            #     xdh = self.attn(xdh)
+            #     #print('xdh:',xdh.shape)
 
             
             # window partition for H*W dimension
@@ -427,24 +427,24 @@ class TinyViTBlock(nn.Module):
             if padding:
                 x = x[:, :H, :W].contiguous()
                 
-            if self.args.thd:
-                xdw = xdw.view(nb*pH, nD, nW, self.window_size, self.window_size,
-                       C).transpose(2, 3).reshape(nb*pH, pD, pW, C)
-                if padding:
-                    xdw = xdw[:,:D,:,:]
-                #print('xdw shape revise',xdw.shape)
-                xdw = rearrange(xdw,'(b h) d w c -> (b d) h w c',h=pH)
-                #print('xdw shape revise',xdw.shape)
-                xdw = xdw[:, :H, :W].contiguous().view(B, L, C)
+            # if self.args.thd:
+            #     xdw = xdw.view(nb*pH, nD, nW, self.window_size, self.window_size,
+            #            C).transpose(2, 3).reshape(nb*pH, pD, pW, C)
+            #     if padding:
+            #         xdw = xdw[:,:D,:,:]
+            #     #print('xdw shape revise',xdw.shape)
+            #     xdw = rearrange(xdw,'(b h) d w c -> (b d) h w c',h=pH)
+            #     #print('xdw shape revise',xdw.shape)
+            #     xdw = xdw[:, :H, :W].contiguous().view(B, L, C)
 
-                xdh = xdh.view(nb*pW, nD, nH, self.window_size, self.window_size,
-                       C).transpose(2, 3).reshape(nb*pW, pD, pH, C)
-                if padding:
-                    xdh = xdh[:,:D,:,:]
-                #print('xdh shape revise',xdh.shape)
-                xdh = rearrange(xdh,'(b w) d h c -> (b d) h w c',w=pW)
-                #print('xdh shape revise',xdh.shape)
-                xdh = xdh[:, :H, :W].contiguous().view(B, L, C)
+            #     xdh = xdh.view(nb*pW, nD, nH, self.window_size, self.window_size,
+            #            C).transpose(2, 3).reshape(nb*pW, pD, pH, C)
+            #     if padding:
+            #         xdh = xdh[:,:D,:,:]
+            #     #print('xdh shape revise',xdh.shape)
+            #     xdh = rearrange(xdh,'(b w) d h c -> (b d) h w c',w=pW)
+            #     #print('xdh shape revise',xdh.shape)
+            #     xdh = xdh[:, :H, :W].contiguous().view(B, L, C)
 
                 #x = x + self.depth_scale*self.Depth_Adapter_dw(xdw)+ self.depth_scale*self.Depth_Adapter_dh(xdh)
 
@@ -724,99 +724,99 @@ class TinyViT(nn.Module):
         return x
 
 
-_checkpoint_url_format = \
-    'https://github.com/wkcn/TinyViT-model-zoo/releases/download/checkpoints/{}.pth'
-_provided_checkpoints = {
-    'tiny_vit_5m_224': 'tiny_vit_5m_22kto1k_distill',
-    'tiny_vit_11m_224': 'tiny_vit_11m_22kto1k_distill',
-    'tiny_vit_21m_224': 'tiny_vit_21m_22kto1k_distill',
-    'tiny_vit_21m_384': 'tiny_vit_21m_22kto1k_384_distill',
-    'tiny_vit_21m_512': 'tiny_vit_21m_22kto1k_512_distill',
-}
+# _checkpoint_url_format = \
+#     'https://github.com/wkcn/TinyViT-model-zoo/releases/download/checkpoints/{}.pth'
+# _provided_checkpoints = {
+#     'tiny_vit_5m_224': 'tiny_vit_5m_22kto1k_distill',
+#     'tiny_vit_11m_224': 'tiny_vit_11m_22kto1k_distill',
+#     'tiny_vit_21m_224': 'tiny_vit_21m_22kto1k_distill',
+#     'tiny_vit_21m_384': 'tiny_vit_21m_22kto1k_384_distill',
+#     'tiny_vit_21m_512': 'tiny_vit_21m_22kto1k_512_distill',
+# }
 
 
-def register_tiny_vit_model(fn):
-    '''Register a TinyViT model
-    It is a wrapper of `register_model` with loading the pretrained checkpoint.
-    '''
-    def fn_wrapper(pretrained=False, **kwargs):
-        model = fn()
-        if pretrained:
-            model_name = fn.__name__
-            assert model_name in _provided_checkpoints, \
-                f'Sorry that the checkpoint `{model_name}` is not provided yet.'
-            url = _checkpoint_url_format.format(
-                _provided_checkpoints[model_name])
-            checkpoint = torch.hub.load_state_dict_from_url(
-                url=url,
-                map_location='cpu', check_hash=False,
-            )
-            model.load_state_dict(checkpoint['model'])
+# def register_tiny_vit_model(fn):
+#     '''Register a TinyViT model
+#     It is a wrapper of `register_model` with loading the pretrained checkpoint.
+#     '''
+#     def fn_wrapper(pretrained=False, **kwargs):
+#         model = fn()
+#         if pretrained:
+#             model_name = fn.__name__
+#             assert model_name in _provided_checkpoints, \
+#                 f'Sorry that the checkpoint `{model_name}` is not provided yet.'
+#             url = _checkpoint_url_format.format(
+#                 _provided_checkpoints[model_name])
+#             checkpoint = torch.hub.load_state_dict_from_url(
+#                 url=url,
+#                 map_location='cpu', check_hash=False,
+#             )
+#             model.load_state_dict(checkpoint['model'])
 
-        return model
+#         return model
 
-    # rename the name of fn_wrapper
-    fn_wrapper.__name__ = fn.__name__
-    return register_model(fn_wrapper)
-
-
-@register_tiny_vit_model
-def tiny_vit_5m_224(pretrained=False, num_classes=1000, drop_path_rate=0.0):
-    return TinyViT(
-        num_classes=num_classes,
-        embed_dims=[64, 128, 160, 320],
-        depths=[2, 2, 6, 2],
-        num_heads=[2, 4, 5, 10],
-        window_sizes=[7, 7, 14, 7],
-        drop_path_rate=drop_path_rate,
-    )
+#     # rename the name of fn_wrapper
+#     fn_wrapper.__name__ = fn.__name__
+#     return register_model(fn_wrapper)
 
 
-@register_tiny_vit_model
-def tiny_vit_11m_224(pretrained=False, num_classes=1000, drop_path_rate=0.1):
-    return TinyViT(
-        num_classes=num_classes,
-        embed_dims=[64, 128, 256, 448],
-        depths=[2, 2, 6, 2],
-        num_heads=[2, 4, 8, 14],
-        window_sizes=[7, 7, 14, 7],
-        drop_path_rate=drop_path_rate,
-    )
+# @register_tiny_vit_model
+# def tiny_vit_5m_224(pretrained=False, num_classes=1000, drop_path_rate=0.0):
+#     return TinyViT(
+#         num_classes=num_classes,
+#         embed_dims=[64, 128, 160, 320],
+#         depths=[2, 2, 6, 2],
+#         num_heads=[2, 4, 5, 10],
+#         window_sizes=[7, 7, 14, 7],
+#         drop_path_rate=drop_path_rate,
+#     )
 
 
-@register_tiny_vit_model
-def tiny_vit_21m_224(pretrained=False, num_classes=1000, drop_path_rate=0.2):
-    return TinyViT(
-        num_classes=num_classes,
-        embed_dims=[96, 192, 384, 576],
-        depths=[2, 2, 6, 2],
-        num_heads=[3, 6, 12, 18],
-        window_sizes=[7, 7, 14, 7],
-        drop_path_rate=drop_path_rate,
-    )
+# @register_tiny_vit_model
+# def tiny_vit_11m_224(pretrained=False, num_classes=1000, drop_path_rate=0.1):
+#     return TinyViT(
+#         num_classes=num_classes,
+#         embed_dims=[64, 128, 256, 448],
+#         depths=[2, 2, 6, 2],
+#         num_heads=[2, 4, 8, 14],
+#         window_sizes=[7, 7, 14, 7],
+#         drop_path_rate=drop_path_rate,
+#     )
 
 
-@register_tiny_vit_model
-def tiny_vit_21m_384(pretrained=False, num_classes=1000, drop_path_rate=0.1):
-    return TinyViT(
-        img_size=384,
-        num_classes=num_classes,
-        embed_dims=[96, 192, 384, 576],
-        depths=[2, 2, 6, 2],
-        num_heads=[3, 6, 12, 18],
-        window_sizes=[12, 12, 24, 12],
-        drop_path_rate=drop_path_rate,
-    )
+# @register_tiny_vit_model
+# def tiny_vit_21m_224(pretrained=False, num_classes=1000, drop_path_rate=0.2):
+#     return TinyViT(
+#         num_classes=num_classes,
+#         embed_dims=[96, 192, 384, 576],
+#         depths=[2, 2, 6, 2],
+#         num_heads=[3, 6, 12, 18],
+#         window_sizes=[7, 7, 14, 7],
+#         drop_path_rate=drop_path_rate,
+#     )
 
 
-@register_tiny_vit_model
-def tiny_vit_21m_512(pretrained=False, num_classes=1000, drop_path_rate=0.1):
-    return TinyViT(
-        img_size=512,
-        num_classes=num_classes,
-        embed_dims=[96, 192, 384, 576],
-        depths=[2, 2, 6, 2],
-        num_heads=[3, 6, 12, 18],
-        window_sizes=[16, 16, 32, 16],
-        drop_path_rate=drop_path_rate,
-    )
+# @register_tiny_vit_model
+# def tiny_vit_21m_384(pretrained=False, num_classes=1000, drop_path_rate=0.1):
+#     return TinyViT(
+#         img_size=384,
+#         num_classes=num_classes,
+#         embed_dims=[96, 192, 384, 576],
+#         depths=[2, 2, 6, 2],
+#         num_heads=[3, 6, 12, 18],
+#         window_sizes=[12, 12, 24, 12],
+#         drop_path_rate=drop_path_rate,
+#     )
+
+
+# @register_tiny_vit_model
+# def tiny_vit_21m_512(pretrained=False, num_classes=1000, drop_path_rate=0.1):
+#     return TinyViT(
+#         img_size=512,
+#         num_classes=num_classes,
+#         embed_dims=[96, 192, 384, 576],
+#         depths=[2, 2, 6, 2],
+#         num_heads=[3, 6, 12, 18],
+#         window_sizes=[16, 16, 32, 16],
+#         drop_path_rate=drop_path_rate,
+#     )
