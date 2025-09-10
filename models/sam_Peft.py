@@ -531,7 +531,7 @@ class EnhancedSAMPEFT(nn.Module):
 # ============================================================================
 
 def create_peft_sam(
-    sam_model: Sam,
+    sam_model,
     method: str = "lora",
     rank: int = 4,
     alpha: float = 1.0,
