@@ -80,7 +80,7 @@ def export_encoder(sam, out_path: str, opset: int, image_size: int):
     enc = EncoderWrapper(sam).eval()
     dummy = torch.randn(1, 3, image_size, image_size, dtype=torch.float32)
 
-    torch.onnx.export(
+    torch.onnx.dynamo_export(
         enc,
         dummy,
         out_path,
@@ -119,7 +119,7 @@ def export_decoder(sam, out_path: str, opset: int, return_single_mask: bool):
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=torch.jit.TracerWarning)
         warnings.filterwarnings("ignore", category=UserWarning)
-        torch.onnx.export(
+        torch.onnx.dynamo_export(
             onnx_model,
             tuple(dummy.values()),
             out_path,
