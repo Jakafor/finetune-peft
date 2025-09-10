@@ -34,7 +34,11 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="cfg for building SAM/MobileSAM or EnhancedSAMPEFT and exporting ONNX"
     )
-
+    
+    parser.add_argument('-net', type=str, default='sam', help='net type')
+    parser.add_argument('-arch', type=str, default='vit_b',
+                        choices=['vit_h','vit_l','vit_b','vit_t'],
+                        help='architecture: vit_h/l/b (SAM) or vit_t (MobileSAM)')
     # ---- Core model args needed by build_sam / modeling ----
     parser.add_argument('--checkpoint', type=str, default=None,
                         help='Path to base SAM/MobileSAM checkpoint (.pth/.pt)')
