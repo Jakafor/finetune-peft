@@ -34,7 +34,7 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="cfg for building SAM/MobileSAM or EnhancedSAMPEFT and exporting ONNX"
     )
-    
+
     parser.add_argument('-net', type=str, default='sam', help='net type')
     parser.add_argument('-arch', type=str, default='vit_b',
                         choices=['vit_h','vit_l','vit_b','vit_t'],
@@ -60,7 +60,8 @@ def parse_args():
                         help='Encoder blocks to add adapters (JSON or comma/space list).')
     parser.add_argument('--if_mask_decoder_adapter', type=bool, default=False,
                         help='Whether to add adapters to every decoder transformer (aka if_adapter).')
-
+    parser.add_argument('-decoder_adapt_depth', type=int, default=2, help='the depth of the decoder adapter')
+    
     # ---- EnhancedSAMPEFT knobs (as you requested) ----
     parser.add_argument('--use_peft', action='store_true',
                         help='Wrap with EnhancedSAMPEFT before export.')
@@ -84,9 +85,10 @@ def parse_args():
     parser.add_argument('--decoder_out', type=str, default=None,
                         help='Decoder ONNX path (defaults based on arch/name).')
     parser.add_argument('--opset', type=int, default=17, help='ONNX opset.')
-    parser.add_argument('--quantize', action='store_true', help='Also write *.quantized.onnx')
-    parser.add_argument('--single_mask', action='store_true',
-                        help='Export decoder that returns a single best mask.')
+    parser.add_argument('--quantize', action=argparse.BooleanOptionalAction,
+                        default=True,help="Decoder returns a single best mask (use --no-single-mask for multi).",)
+    parser.add_argument('--single_mask', action=argparse.BooleanOptionalAction,
+                        default=False,help='Export decoder that returns a single best mask.')
 
     args = parser.parse_args()
 
