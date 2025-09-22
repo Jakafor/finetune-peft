@@ -280,6 +280,15 @@ def build_semantic_sam_vit_t(args, checkpoint=None, num_classes=20):
     sem = SemanticSam(ori_sam=mobile, class_num=num_classes, model_type='vit_t')
     return sem
 
+
+# Register new builders
+sam_model_registry.update({
+    "semantic_vit_b": build_semantic_sam_vit_b,
+    "semantic_vit_l": build_semantic_sam_vit_l,
+    "semantic_vit_h": build_semantic_sam_vit_h,
+    "semantic_vit_t": build_semantic_sam_vit_t,
+})
+
 #################################################################################################################################
 ''' basic build function for SAM and Semantic SAM'''
 #################################################################################################################################
