@@ -9,7 +9,7 @@ from .prompt_encoder_adapter import BasePromptEncodeAdapter
 
 class BaseExtendSam(nn.Module):
 
-    def __init__(self, ckpt_path=None, fix_img_en=False, fix_prompt_en=False, fix_mask_de=False, model_type='vit_b', ori_sam=None):
+    def __init__(self, ckpt_path=None, model_type='vit_b', ori_sam=None):
         super(BaseExtendSam, self).__init__()
         assert model_type in ['default', 'vit_b', 'vit_l', 'vit_h'], print(
             "Wrong model_type, SAM only can be built as vit_b, vot_l, vit_h and default ")
