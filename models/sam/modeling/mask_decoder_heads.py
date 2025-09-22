@@ -4,7 +4,7 @@ from torch.nn import functional as F
 
 from typing import List, Tuple, Type
 
-from .common import LayerNorm2d
+from models.sam.modeling.common import LayerNorm2d
 
 
 class OriHead(nn.Module):

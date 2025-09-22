@@ -1,7 +1,7 @@
 # copyright ziqi-jin
 
 import torch.nn as nn
-from .sam import Sam
+from models.sam.modeling.sam import Sam
 
 
 
