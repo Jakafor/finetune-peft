@@ -45,6 +45,7 @@ class MaskDecoder(nn.Module):
         self.transformer_dim = transformer_dim
         self.transformer = transformer
         self.iou_head_depth = iou_head_depth
+        self.iou_head_hidden_dim = iou_head_hidden_dim
 
         self.num_multimask_outputs = num_multimask_outputs
 
