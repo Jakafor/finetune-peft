@@ -359,11 +359,12 @@ class TinyViTBlock(nn.Module):
             self.MLP_Adapter = Adapter(dim, skip_connect=False)  # MLP-adapter, no skip connection
             self.Space_Adapter = Adapter(dim)  # with skip connection
             self.scale = 0.5
+            
         #print('###########',self.depth)
-        if self.args.thd and (self.depth in self.args.encoder_depth_layer):
-            self.Depth_Adapter_scale = nn.Parameter(torch.zeros(1))
-            self.Depth_Adapter_dw = Adapter(dim) 
-            self.Depth_Adapter_dh = Adapter(dim) 
+        # if self.args.thd and (self.depth in self.args.encoder_depth_layer):
+        #     self.Depth_Adapter_scale = nn.Parameter(torch.zeros(1))
+        #     self.Depth_Adapter_dw = Adapter(dim) 
+        #     self.Depth_Adapter_dh = Adapter(dim) 
             
 
     def forward(self, x):
@@ -451,8 +452,9 @@ class TinyViTBlock(nn.Module):
             x = x.view(B, L, C)
         if self.args.if_encoder_adapter and (self.depth in self.args.encoder_adapter_depths): 
             x = self.Space_Adapter(x)
-        if self.args.thd and (self.depth in self.args.encoder_depth_layer):
-            x = x + self.Depth_Adapter_scale*(self.Depth_Adapter_dw(xdw)+self.Depth_Adapter_dh(xdh))
+
+        #if self.args.thd and (self.depth in self.args.encoder_depth_layer):
+            #x = x + self.Depth_Adapter_scale*(self.Depth_Adapter_dw(xdw)+self.Depth_Adapter_dh(xdh))
             
         x = res_x + self.drop_path(x)
 
