@@ -36,7 +36,7 @@ def parse_args():
     )
 
     parser.add_argument('-net', type=str, default='sam', help='net type')
-    parser.add_argument('-arch', type=str, default='vit_b',
+    parser.add_argument('-arch', type=str, default='vit_t',
                         choices=['vit_h','vit_l','vit_b','vit_t'],
                         help='architecture: vit_h/l/b (SAM) or vit_t (MobileSAM)')
     # ---- Core model args needed by build_sam / modeling ----
@@ -69,13 +69,15 @@ def parse_args():
                         help='Encoder layers to apply PEFT (None => all).')
     parser.add_argument('--decoder_layers', type=str, default=None,
                         help='Decoder layers to apply PEFT (None => all).')
-    parser.add_argument('--enable_adapters', action='store_true', default=False,
+    parser.add_argument('--enable_adapters', action='store_true', default=True,
                         help='Enable existing adapters in the model (default False).')
     parser.add_argument('--adapter_modules', type=str, default=None,
                         help='Adapter module name patterns to enable (e.g. "Adapter MLP_Adapter").')
     parser.add_argument('--rank', type=int, default=4, help='PEFT rank.')
     parser.add_argument('--alpha', type=float, default=1.0, help='PEFT alpha.')
     parser.add_argument('--dropout', type=float, default=0.0, help='PEFT dropout.')
+    parser.add_argument('--method', type=str, default='lora',
+                        choices=['lora', 'delta_lora', 'vera', 'lora_fa'])
 
     # ---- Export knobs ----
     parser.add_argument('--output_dir', type=str, default='C:\\Users\\Jan Karl Forstner\\experiment\\exported_models',
@@ -88,7 +90,7 @@ def parse_args():
     parser.add_argument('--quantize', action=argparse.BooleanOptionalAction,
                         default=True,help="Decoder returns a single best mask (use --no-single-mask for multi).",)
     parser.add_argument('--single_mask', action=argparse.BooleanOptionalAction,
-                        default=False,help='Export decoder that returns a single best mask.')
+                        default=True,help='Export decoder that returns a single best mask.')
 
     args = parser.parse_args()
 
