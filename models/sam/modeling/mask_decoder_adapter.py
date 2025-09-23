@@ -7,8 +7,8 @@ from .sam import Sam
 from .mask_decoder import MaskDecoder
 from typing import List, Tuple
 from torch.nn import functional as F
-from models.sam.modeling.mask_decoder_heads import SemSegHead
-from models.sam.modeling.mask_decoder_neck import MaskDecoderNeck
+from .mask_decoder_heads import SemSegHead
+from .mask_decoder_neck import MaskDecoderNeck
 
 
 class BaseMaskDecoderAdapter(MaskDecoder):

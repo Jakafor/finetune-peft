@@ -1,5 +1,5 @@
 import torch.nn as nn
-from sam import Sam
+from .sam import Sam
 
 
 

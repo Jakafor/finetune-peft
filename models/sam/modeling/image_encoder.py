@@ -194,7 +194,7 @@ class Block(nn.Module):
             self.MLP_Adapter = Adapter(dim, skip_connect=False)  # MLP-adapter, no skip connection
             self.Space_Adapter = Adapter(dim)  # with skip connection
             self.scale = scale
-            self.Depth_Adapter = Adapter(dim, skip_connect=False)  # no skip connection
+            #self.Depth_Adapter = Adapter(dim, skip_connect=False)  # no skip connection
 
         self.norm2 = norm_layer(dim)
         self.mlp = MLPBlock(embedding_dim=dim, mlp_dim=int(dim * mlp_ratio), act=act_layer)

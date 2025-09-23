@@ -9,7 +9,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from typing import List, Tuple, Type
-from models.sam.modeling.common import LayerNorm2d
+from .common import LayerNorm2d
 
 '''
 This file save the mask_decoder's neck class, 

@@ -11,16 +11,16 @@ class BaseExtendSam(nn.Module):
 
     def __init__(self, ckpt_path=None, model_type='vit_b', ori_sam=None):
         super(BaseExtendSam, self).__init__()
-        assert model_type in ['default', 'vit_b', 'vit_l', 'vit_h'], print(
-            "Wrong model_type, SAM only can be built as vit_b, vot_l, vit_h and default ")
+        assert model_type in ['default', 'vit_b', 'vit_l', 'vit_h', 'vit_t'], print(
+            "Wrong model_type, SAM only can be built as vit_b, vit_l, vit_h, and vit_t ")
         if ori_sam is not None:
             self.ori_sam = ori_sam
         else:
             from ..import sam_model_registry
             self.ori_sam = sam_model_registry[model_type](ckpt_path)
-        self.img_adapter = BaseImgEncodeAdapter(self.ori_sam, fix=fix_img_en)
-        self.prompt_adapter = BasePromptEncodeAdapter(self.ori_sam, fix=fix_prompt_en)
-        self.mask_adapter = BaseMaskDecoderAdapter(self.ori_sam, fix=fix_mask_de)
+        self.img_adapter = BaseImgEncodeAdapter(self.ori_sam)
+        self.prompt_adapter = BasePromptEncodeAdapter(self.ori_sam)
+        self.mask_adapter = BaseMaskDecoderAdapter(self.ori_sam)
 
     def forward(self, img):
         x = self.img_adapter(img)
@@ -46,7 +46,6 @@ class BaseExtendSam(nn.Module):
 
 class SemanticSam(BaseExtendSam):
 
-    def __init__(self, ckpt_path=None, fix_img_en=False, fix_prompt_en=False, fix_mask_de=False, class_num=20, model_type='vit_b', ori_sam=None):
-        super().__init__(ckpt_path=ckpt_path, fix_img_en=fix_img_en, fix_prompt_en=fix_prompt_en,
-                         fix_mask_de=fix_mask_de, model_type=model_type, ori_sam=ori_sam)
-        self.mask_adapter = SemMaskDecoderAdapter(self.ori_sam, fix=fix_mask_de, class_num=class_num)
+    def __init__(self, ckpt_path=None, class_num=20, model_type='vit_b', ori_sam=None):
+        super().__init__(ckpt_path=ckpt_path, model_type=model_type, ori_sam=ori_sam)
+        self.mask_adapter = SemMaskDecoderAdapter(self.ori_sam, class_num=class_num)
