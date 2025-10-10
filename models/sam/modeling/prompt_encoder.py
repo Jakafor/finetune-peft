@@ -10,7 +10,7 @@ from torch import nn
 
 from typing import Any, Optional, Tuple, Type
 
-from models.sam.modeling.common import LayerNorm2d    
+from .common import LayerNorm2d    
 
 
 class PatchEmbed(nn.Module):
@@ -185,6 +185,16 @@ class PromptEncoder(nn.Module):
         corner_embedding[:, 0, :] += self.point_embeddings[2].weight
         corner_embedding[:, 1, :] += self.point_embeddings[3].weight
         return corner_embedding
+    
+    #####helper that checks which batches of boxes are valid (x1>x0 and y1>y0)#####
+    def _boxes_valid_mask(self, boxes: torch.Tensor) -> torch.Tensor:
+        # boxes: (B,4) in xyxy
+        x0, y0, x1, y1 = boxes.unbind(dim=1)
+        valid = (x1 > x0) & (y1 > y0)
+        # also treat all-zero as invalid sentinel
+        valid &= (x0 != 0) | (y0 != 0) | (x1 != 0) | (y1 != 0)
+        return valid
+    ####################################################################################
 
     def _embed_masks(self, masks: torch.Tensor) -> torch.Tensor:
         """Embeds mask inputs."""
@@ -241,9 +251,18 @@ class PromptEncoder(nn.Module):
             coords, labels = points
             point_embeddings = self._embed_points(coords, labels, pad=(boxes is None))
             sparse_embeddings = torch.cat([sparse_embeddings, point_embeddings], dim=1)
+        # if boxes is not None:
+        #     box_embeddings = self._embed_boxes(boxes)
+        #     box_embeddings = box_embeddings.reshape(bs,-1,self.embed_dim)
+        #     sparse_embeddings = torch.cat([sparse_embeddings, box_embeddings], dim=1)
+
+    ##################new code to handle invalid boxes, zero embeddings are added for invalid boxes so that zero embeddings learn to be invalid boxes##################
         if boxes is not None:
-            box_embeddings = self._embed_boxes(boxes)
-            box_embeddings = box_embeddings.reshape(bs,-1,self.embed_dim)
+            box_embeddings = self._embed_boxes(boxes)  # (B, 2, embed_dim)
+            boxes_valid = self._boxes_valid_mask(boxes).view(-1, 1, 1)  # (B,1,1) bool
+            # zero-out embeddings where the box is invalid so they contribute nothing
+            box_embeddings = torch.where(boxes_valid, box_embeddings, torch.zeros_like(box_embeddings))
+            box_embeddings = box_embeddings.reshape(bs, -1, self.embed_dim)  # (B, 2, C) -> (B, 2, C)
             sparse_embeddings = torch.cat([sparse_embeddings, box_embeddings], dim=1)
 
         if masks is not None:

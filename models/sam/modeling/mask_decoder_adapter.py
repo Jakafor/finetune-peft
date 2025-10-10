@@ -49,7 +49,7 @@ class SemMaskDecoderAdapter(BaseMaskDecoderAdapter):
                                        class_num=class_num)
         # pair the params between ori mask_decoder and new mask_decoder_adapter
         self.pair_params(self.decoder_neck)
-        self.pair_params(self.decoder_head)
+        self.pair_params_smart(self.decoder_head, class_num)
 
     def forward(self, image_embeddings, prompt_adapter, sparse_embeddings, dense_embeddings, multimask_output=True,
                 scale=1):
@@ -66,6 +66,58 @@ class SemMaskDecoderAdapter(BaseMaskDecoderAdapter):
         for name, value in target_model.named_parameters():
             if name in src_dict.keys():
                 value.data.copy_(src_dict[name].data)
+
+    ##### adaptation from original semantic segmentation head ####################
+
+    def pair_params_smart(self, target_model: nn.Module, class_num: int):
+        """
+        Intelligently copy parameters from original SAM decoder:
+        - For hypernetworks: reuse the first N pre-trained networks (where N = min(4, class_num))
+        - For output_upscaling: copy all (architecture matches)
+        - For IoU head: skip (different output dimension)
+        """
+        src_dict = self.sam_mask_decoder.state_dict()
+        target_dict = target_model.state_dict()
+        
+        # Get the number of original mask tokens (typically 4: 1 + 3 multimask)
+        num_original_masks = self.sam_mask_decoder.num_mask_tokens
+        
+        for target_name, target_param in target_model.named_parameters():
+            # Handle output_upscaling layers (same architecture, copy all)
+            if 'output_upscaling' in target_name:
+                if target_name in src_dict:
+                    target_param.data.copy_(src_dict[target_name].data)
+                    print(f"Copied: {target_name}")
+            
+            # Handle hypernetwork MLPs - reuse pre-trained ones where possible
+            elif 'output_hypernetworks_mlps' in target_name:
+                # Extract the MLP index from the parameter name
+                # Format: output_hypernetworks_mlps.INDEX.layers.LAYER.weight/bias
+                parts = target_name.split('.')
+                if len(parts) >= 2:
+                    try:
+                        mlp_idx = int(parts[1])
+                        # If this index exists in original model, copy the weights
+                        if mlp_idx < num_original_masks:
+                            if target_name in src_dict:
+                                target_param.data.copy_(src_dict[target_name].data)
+                                print(f"Reused pre-trained hypernetwork {mlp_idx}: {target_name}")
+                        else:
+                            print(f"Randomly initialized hypernetwork {mlp_idx}: {target_name}")
+                    except (ValueError, IndexError):
+                        pass
+            
+            # Skip IoU prediction head (different output dimensions)
+            elif 'iou_prediction_head' in target_name:
+                print(f"Skipped (different dims): {target_name}")
+                # These will remain randomly initialized
+        
+        # Print summary
+        print(f"\nParameter initialization summary:")
+        print(f"- Reused {min(num_original_masks, class_num)} pre-trained hypernetworks out of {class_num} total")
+        print(f"- Randomly initialized {max(0, class_num - num_original_masks)} new hypernetworks")
+        print(f"- Copied all output_upscaling layers")
+        print(f"- Randomly initialized IoU head for {class_num} classes")
 
 
 # Lightly adapted from

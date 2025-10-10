@@ -10,7 +10,9 @@ import torch
 import torch.nn.functional as F
 import hashlib, os
 from torch.hub import download_url_to_file
-from models.sam.modeling.extend_sam import SemanticSam
+from finetune_sam_slim.models.sam.modeling.extend_sam import SemanticSam
+
+from os.path import expandvars, expanduser
 
 from .modeling import (
     ImageEncoderViT,
@@ -109,6 +111,7 @@ def build_sam_vit_l(args, checkpoint=None, num_classes = 1):
 
 
 def build_sam_vit_b(args, checkpoint=None, num_classes = 1):
+   
     if checkpoint is None:
         name, url, _ = CKPTS["vit_b"]
         checkpoint = Path(os.path.expanduser("~/.cache/segment_anything")) / name
@@ -331,7 +334,6 @@ def _build_sam(
             mask_in_chans=16,
         ),
         mask_decoder=MaskDecoder(
-            #num_multimask_outputs=3,
             num_multimask_outputs = num_classes,
             transformer=TwoWayTransformer(
                 args = args,
@@ -351,13 +353,20 @@ def _build_sam(
         
 
     #print(sam)
+    # Load only if a real checkpoint file was provided
     if checkpoint is not None:
-        state_dict = _safe_load(checkpoint)
-        try:
-           sam.load_state_dict(state_dict, strict=False)
-        except Exception:
-           new_state_dict = load_from(sam, state_dict, image_size, vit_patch_size)
-           sam.load_state_dict(new_state_dict)
+        ckpt_path = Path(checkpoint)
+        if ckpt_path.is_file():
+            base_obj = _safe_load(ckpt_path)
+            base_sd = _as_state_dict(base_obj)
+            # Try a straight load; if shapes differ (e.g., pos_embed), fall back to transplant helper
+            try:
+                sam.load_state_dict(base_sd, strict=False)
+            except Exception:
+                new_sd = load_from(sam, base_sd, image_size, vit_patch_size)
+                sam.load_state_dict(new_sd, strict=False)
+        else:
+            print(f"[info] _build_sam: base checkpoint not found → continuing with random init: {ckpt_path}")
             
     
     if args.if_split_encoder_gpus:

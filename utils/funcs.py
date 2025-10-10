@@ -7,8 +7,8 @@ from typing import Tuple, Optional
 
 
 def get_first_prompt(mask_cls: np.ndarray, 
-                     dist_thre_ratio: float = 0.1,
-                     prompt_num: int = 5,
+                     dist_thre_ratio: float = 0.2,
+                     sample_num: int = 5,
                      neg_prompt_ratio: float = 0.3,
                      max_points_ratio: float = 0.5) -> Tuple[torch.Tensor, torch.Tensor]:
     """
@@ -25,16 +25,20 @@ def get_first_prompt(mask_cls: np.ndarray,
         Tuple of (prompts, labels) where prompts is shape (B, N, 2) and labels is (B, N)
     """
     # Find all disconnected regions
-    label_msk, region_ids = label(mask_cls, connectivity=2, return_num=True)
+    label_msk = mask_cls.astype(np.int32)
+
+    # Classes present (exclude background 0)
+    classes = [int(c) for c in np.unique(label_msk) if c != 0]
+    classes.sort()
     
     all_prompts = []
     all_labels = []
-    
-    if region_ids > 0:
+
+    if len(classes) > 0:
         # Process each blob
-        for region_id in range(1, region_ids + 1):
+        for cls_id in classes:
             # Create binary mask for current blob
-            binary_msk = (label_msk == region_id).astype(np.uint8)
+            binary_msk = (label_msk == cls_id).astype(np.uint8)
             
             # Calculate distance transform
             padded_mask = np.pad(binary_msk, ((1, 1), (1, 1)), 'constant')
@@ -59,8 +63,8 @@ def get_first_prompt(mask_cls: np.ndarray,
                 blob_labels = np.array([-1])
             else:
                 # Calculate number of prompts
-                if prompt_num <= max_available:
-                    actual_prompt_num = prompt_num
+                if sample_num <= max_available:
+                    actual_prompt_num = sample_num
                 else:
                     actual_prompt_num = min(int(max_available * max_points_ratio), max_available)
                 
@@ -195,14 +199,19 @@ def get_top_boxes(mask_cls: np.ndarray,
         Tensor of shape (B, 4) with bounding boxes, or None for blobs that don't meet criteria
     """
     # Find all disconnected regions
-    label_msk, region_ids = label(mask_cls, connectivity=2, return_num=True)
+    label_msk = mask_cls.astype(np.int32)
+    classes = [int(c) for c in np.unique(label_msk) if c != 0]
+    classes.sort()
+
+    if not classes:
+        return None
     
     all_boxes = []
     
-    if region_ids > 0:
-        for region_id in range(1, region_ids + 1):
+    if len(classes) > 0:
+        for cls_id in classes:
             # Create binary mask for current blob
-            binary_msk = (label_msk == region_id).astype(np.uint8)
+            binary_msk = (label_msk == cls_id).astype(np.uint8)
             
             # Calculate bounding box
             rows, cols = np.where(binary_msk)

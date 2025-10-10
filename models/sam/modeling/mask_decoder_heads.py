@@ -156,7 +156,7 @@ class SemSegHead(nn.Module):
         )
 
         self.iou_prediction_head = MLP(
-            transformer_dim, iou_head_hidden_dim, self.num_classes, iou_head_depth
+            transformer_dim, iou_head_hidden_dim, self.class_num,iou_head_depth
         )
 
     def forward(
