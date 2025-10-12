@@ -26,10 +26,10 @@ from monai.losses import DiceLoss, FocalLoss, TverskyLoss
 import torch.nn.functional as F
 
 # Import your modules
-from models.sam import sam_model_registry
-from utils.dataset import Public_dataset
-from models.advanced_sam_peft import create_peft_sam, PEFTMethod
-import cfg
+from finetune_sam_slim.models.sam import sam_model_registry
+from finetune_sam_slim.utils.dataset import Public_dataset
+from finetune_sam_slim.models.advanced_sam_peft import create_peft_sam, PEFTMethod
+from finetune_sam_slim import cfg
 
 
 #################################################################################################

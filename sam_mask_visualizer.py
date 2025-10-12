@@ -23,6 +23,7 @@ from os.path import expandvars, expanduser
 from finetune_sam_slim.models.sam import sam_model_registry
 from finetune_sam_slim.models.advanced_sam_peft import create_peft_sam
 from finetune_sam_slim.models.sam.modeling.extend_sam import SemanticSam
+from finetune_sam_slim import cfg
 
 # ------------------------------------------------------------------------------
 # Utility Functions (adapted from onnx_export_sam.py)
@@ -44,10 +45,12 @@ def _parse_cli():
     p.add_argument("--out", "--output-dir", default=None,
                    help="Directory to save visualization (optional)")
     a = p.parse_args()
+    args = cfg.parse_args()
     return (
         _expand_path(a.checkpoint),
         _expand_path(a.image),
         _expand_path(a.out) if a.out else None,
+        args
     )
 
 
@@ -481,6 +484,117 @@ def preprocess_image(image_path: str, image_size: int = 1024) -> Tuple[torch.Ten
     print(f"  Preprocessed shape: {image_tensor.shape}")
     return image_tensor, (image_np.shape[1], image_np.shape[0])  # Return (W, H)
 
+def extract_number_from_path(image_path: str) -> Optional[int]:
+    """Extract number from image filename (e.g., 'sub_image_12.jpg' -> 12)"""
+    import re
+    filename = Path(image_path).stem
+    numbers = re.findall(r'\d+', filename)
+    if numbers:
+        # Take the last number in the filename
+        return int(numbers[-1])
+    return None
+
+def load_annotation_prompts(args, image_path: str, cfg: Dict[str, Any]) -> Optional[Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]]:
+    """
+    Load annotation prompts from corresponding JSON file.
+    Returns (points, point_labels, boxes) or None if not found.
+    """
+    # Get annotations directory from config
+    ann_dir = args.ann_dir
+    if not ann_dir:
+        return None
+    
+    ann_dir = _expand_path(ann_dir)
+    if not ann_dir.exists():
+        return None
+    
+    # Extract number from image path
+    image_num = extract_number_from_path(str(image_path))
+    if image_num is None:
+        return None
+    
+    # Find matching annotation file
+    # Try different naming patterns
+    patterns = [
+        f"tile_{image_num:04d}.json",  # tile_0012.json
+        f"tile_{image_num}.json",       # tile_12.json
+        f"*{image_num:04d}.json",       # anything_0012.json
+        f"*_{image_num}.json"           # anything_12.json
+    ]
+    
+    ann_file = None
+    for pattern in patterns:
+        matches = list(ann_dir.glob(pattern))
+        if matches:
+            ann_file = matches[0]
+            break
+    
+    if not ann_file or not ann_file.exists():
+        print(f"  No annotation file found for image number {image_num}")
+        return None
+    
+    print(f"  Found annotation file: {ann_file}")
+    
+    # Load JSON
+    with open(ann_file, 'r') as f:
+        ann_data = json.load(f)
+    
+    if 'shapes' not in ann_data or not ann_data['shapes']:
+        return None
+    
+    # Extract points and boxes
+    points_list = []
+    labels_list = []
+    boxes_list = []
+    
+    for shape in ann_data['shapes']:
+        shape_type = shape.get('shape_type', '')
+        shape_points = shape.get('points', [])
+        label = shape.get('label', 'unknown')
+        
+        # Map label to binary (1 for positive, 0 for negative)
+        # You can customize this mapping
+        label_value = 0 if label.lower() in ['bad', 'negative', 'background'] else 1
+        
+        if shape_type == 'point' and shape_points:
+            # Single point
+            points_list.append(shape_points[0])
+            labels_list.append(label_value)
+        
+        elif shape_type == 'rectangle' and len(shape_points) >= 2:
+            # Bounding box (need min/max corners)
+            xs = [p[0] for p in shape_points]
+            ys = [p[1] for p in shape_points]
+            box = [min(xs), min(ys), max(xs), max(ys)]
+            boxes_list.append(box)
+        
+        elif shape_type == 'polygon' and shape_points:
+            # Use centroid as point prompt
+            xs = [p[0] for p in shape_points]
+            ys = [p[1] for p in shape_points]
+            centroid = [sum(xs)/len(xs), sum(ys)/len(ys)]
+            points_list.append(centroid)
+            labels_list.append(label_value)
+    
+    # Convert to tensors
+    points_tensor = None
+    labels_tensor = None
+    boxes_tensor = None
+    
+    if points_list:
+        points_tensor = torch.tensor(points_list, dtype=torch.float32).unsqueeze(0)  # (1, N, 2)
+        labels_tensor = torch.tensor(labels_list, dtype=torch.long).unsqueeze(0)      # (1, N)
+        print(f"  Loaded {len(points_list)} point prompts")
+    
+    if boxes_list:
+        boxes_tensor = torch.tensor(boxes_list, dtype=torch.float32).unsqueeze(0)    # (1, M, 4)
+        print(f"  Loaded {len(boxes_list)} box prompts")
+    
+    if points_tensor is None and boxes_tensor is None:
+        return None
+    
+    return points_tensor, labels_tensor, boxes_tensor
+
 def generate_random_prompt(image_size: int = 1024, num_points: int = 1) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Generate random positive point prompts.
@@ -496,8 +610,11 @@ def generate_random_prompt(image_size: int = 1024, num_points: int = 1) -> Tuple
     
     return points, labels
 
-def run_sam_inference(model: nn.Module, image: torch.Tensor, points: torch.Tensor, 
-                      labels: torch.Tensor, device: str) -> Tuple[torch.Tensor, torch.Tensor]:
+def run_sam_inference(model: nn.Module, image: torch.Tensor, 
+                      points: Optional[torch.Tensor] = None, 
+                      labels: Optional[torch.Tensor] = None,
+                      boxes: Optional[torch.Tensor] = None,
+                      device: str = "cpu") -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Run SAM model inference with given image and prompts.
     Returns masks and IoU predictions.
@@ -506,8 +623,12 @@ def run_sam_inference(model: nn.Module, image: torch.Tensor, points: torch.Tenso
     
     # Move inputs to device
     image = image.to(device)
-    points = points.to(device)
-    labels = labels.to(device)
+    if points is not None:
+        points = points.to(device)
+    if labels is not None:
+        labels = labels.to(device)
+    if boxes is not None:
+        boxes = boxes.to(device)
     
     with torch.no_grad():
         # Check if this is a PEFT model
@@ -524,7 +645,9 @@ def run_sam_inference(model: nn.Module, image: torch.Tensor, points: torch.Tenso
             print("  Using SemanticSAM inference path")
             image_embeddings = actual_model.img_adapter(image)
             sparse_embeddings, dense_embeddings = actual_model.prompt_adapter(
-                points=(points, labels), boxes=None, masks=None
+                points=(points, labels) if points is not None else None,
+                boxes=boxes,
+                masks=None
             )
             masks, iou_pred = actual_model.mask_adapter(
                 image_embeddings=image_embeddings,
@@ -542,8 +665,8 @@ def run_sam_inference(model: nn.Module, image: torch.Tensor, points: torch.Tenso
             
             # Encode prompts
             sparse_embeddings, dense_embeddings = actual_model.prompt_encoder(
-                points=(points, labels),
-                boxes=None,
+                points=(points, labels) if points is not None else None,
+                boxes=boxes,
                 masks=None
             )
             
@@ -560,9 +683,6 @@ def run_sam_inference(model: nn.Module, image: torch.Tensor, points: torch.Tenso
             )
         else:
             # Unknown structure
-            print(f"  Error: Unrecognized model structure")
-            print(f"  Model type: {type(actual_model)}")
-            print(f"  Model attributes: {dir(actual_model)[:10]}...")  # Show first 10 attributes
             raise NotImplementedError(f"Unknown model structure for {type(actual_model)}")
     
     print(f"  Output masks shape: {masks.shape}")
@@ -576,7 +696,9 @@ def run_sam_inference(model: nn.Module, image: torch.Tensor, points: torch.Tenso
 # ------------------------------------------------------------------------------
 
 def visualize_masks(image_path: str, masks: torch.Tensor, iou_scores: torch.Tensor, 
-                    points: torch.Tensor, save_path: Optional[str] = None):
+                    points: Optional[torch.Tensor] = None,
+                    boxes: Optional[torch.Tensor] = None,
+                    save_path: Optional[str] = None):
     """
     Visualize masks overlaid on original image with IoU scores.
     """
@@ -596,15 +718,30 @@ def visualize_masks(image_path: str, masks: torch.Tensor, iou_scores: torch.Tens
     if num_masks == 1:
         axes = [axes]
     
-    # Show original image with prompt point
+    # Show original image with prompts
     axes[0].imshow(image_np)
-    axes[0].set_title("Original Image with Prompt")
+    axes[0].set_title("Original Image with Prompts")
     
-    # Add prompt point
-    point = points.cpu().numpy()[0, 0]  # First point
-    # Scale point to original image size
-    point_scaled = point * np.array([w, h]) / 1024
-    axes[0].scatter(point_scaled[0], point_scaled[1], c='red', s=100, marker='*')
+    # Add prompt points
+    if points is not None:
+        points_np = points.cpu().numpy()[0]  # (N, 2)
+        for point in points_np:
+            # Scale point to original image size
+            point_scaled = point * np.array([w, h]) / 1024
+            axes[0].scatter(point_scaled[0], point_scaled[1], c='red', s=100, marker='*')
+    
+    # Add boxes
+    if boxes is not None:
+        boxes_np = boxes.cpu().numpy()[0]  # (M, 4)
+        for box in boxes_np:
+            # Scale box to original image size
+            box_scaled = box * np.array([w, h, w, h]) / 1024
+            rect = plt.Rectangle((box_scaled[0], box_scaled[1]), 
+                                box_scaled[2] - box_scaled[0], 
+                                box_scaled[3] - box_scaled[1],
+                                fill=False, edgecolor='blue', linewidth=2)
+            axes[0].add_patch(rect)
+    
     axes[0].axis('off')
     
     # Show each mask
@@ -646,7 +783,7 @@ def visualize_masks(image_path: str, masks: torch.Tensor, iou_scores: torch.Tens
 # Main Function
 # ------------------------------------------------------------------------------
 
-def visualize(checkpoint_path: str, image_path: str, output_dir: Optional[str] = None):
+def visualize(args, checkpoint_path: str, image_path: str, output_dir: Optional[str] = None):
     """
     Main function to load model, run inference, and visualize results.
     
@@ -659,6 +796,7 @@ def visualize(checkpoint_path: str, image_path: str, output_dir: Optional[str] =
     checkpoint_path = _expand_path(checkpoint_path)
     image_path = _expand_path(image_path)
     output_dir = _expand_path(output_dir) if output_dir else None
+    
     
     # Find config.json in same directory as checkpoint
     config_path = checkpoint_path.parent / "config.json"
@@ -683,14 +821,23 @@ def visualize(checkpoint_path: str, image_path: str, output_dir: Optional[str] =
     model.eval()
     
     # Preprocess image
-    image_tensor, _ = preprocess_image(str(image_path), 
+    image_tensor, original_size = preprocess_image(str(image_path), 
                                     image_size=cfg.get("image_size", 1024))
     
-    # Generate random prompt
-    points, labels = generate_random_prompt(image_size=cfg.get("image_size", 1024))
+    # Try to load annotation prompts first
+    annotation_prompts = load_annotation_prompts(args, str(image_path), cfg)
+    
+    if annotation_prompts is not None:
+        points, labels, boxes = annotation_prompts
+        print("\n[Using Annotation Prompts]")
+    else:
+        # Fall back to random prompt
+        print("\n[No annotations found - using random prompt]")
+        points, labels = generate_random_prompt(image_size=cfg.get("image_size", 1024))
+        boxes = None
     
     # Run inference
-    masks, iou_scores = run_sam_inference(model, image_tensor, points, labels, device)
+    masks, iou_scores = run_sam_inference(model, image_tensor, points, labels, boxes, device)
     
     # Visualize results
     save_path = None
@@ -708,8 +855,8 @@ def visualize(checkpoint_path: str, image_path: str, output_dir: Optional[str] =
     return model, masks, iou_scores
 
 def main():  # zero-arg entry for console_script
-    ckpt, img, out = _parse_cli()
-    return visualize(str(ckpt), str(img), str(out) if out else None)
+    ckpt, img, out, args = _parse_cli()
+    return visualize(args, str(ckpt), str(img), str(out) if out else None)
 
 
 # ------------------------------------------------------------------------------
