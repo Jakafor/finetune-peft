@@ -135,12 +135,13 @@ def main():
         targets=args.targets,
         cls=args.cls,
         if_prompt=args.if_prompt,
+        neg_prompt_ratio=args.neg_prompt_ratio,
         prompt_type=args.prompt_type,
         label_mapping=args.label_mapping,
         if_spatial=args.if_spatial,
         delete_empty_masks=args.delete_empty_masks,
     )
-    item = dataset[0]
+    item = dataset[1]
     print(item["mask"].shape)
     viz_points_batches(item, save_path=None, show=True)
 

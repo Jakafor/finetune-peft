@@ -1081,6 +1081,7 @@ class SemanticSAMTrainer:
             phase='train',
             sample_num=self.args.sample_num,
             prompt_type=self.args.prompt_type,
+            neg_prompt_ratio=self.args.neg_prompt_ratio,
             targets=self.args.targets,
             cls=self.args.cls if hasattr(self.args, 'cls') else -1,
             label_mapping=self.args.label_mapping if hasattr(self.args, 'label_mapping') else None
@@ -1092,6 +1093,7 @@ class SemanticSAMTrainer:
             phase='val',
             sample_num=self.args.sample_num,
             prompt_type=self.args.prompt_type,
+            neg_prompt_ratio=self.args.neg_prompt_ratio,
             targets=self.args.targets,
             cls=self.args.cls if hasattr(self.args, 'cls') else -1,
             label_mapping=self.args.label_mapping if hasattr(self.args, 'label_mapping') else None

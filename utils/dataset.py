@@ -18,6 +18,7 @@ from torchvision.transforms import InterpolationMode
 from torchvision.transforms import functional as TF
 
 from .funcs import get_first_prompt, get_top_boxes
+from .. import cfg
 
 
 class Public_dataset(Dataset):
@@ -42,7 +43,8 @@ class Public_dataset(Dataset):
         sample_num: int = 50,                      # used for get_first_prompt(prompt_num=...)
         crop: bool = False,
         crop_size: int = 1024,
-        targets: List[str] = ("multi_all",),     # supports 'combine_all', 'multi_all', or specific class flow
+        targets: List[str] = ("multi_all",), 
+        neg_prompt_ratio: float = 0.0,            # supports 'combine_all', 'multi_all', or specific class flow
         # part_list: List[str] = ('all',),
         cls: int = -1,
         if_prompt: bool = True,
@@ -73,6 +75,7 @@ class Public_dataset(Dataset):
         self.if_prompt = if_prompt
         self.prompt_type = prompt_type
         self.sample_num = sample_num
+        self.neg_prompt_ratio = neg_prompt_ratio
         self.label_dic = {}
         self.data_list: List[str] = []  
         self.label_mapping = label_mapping
@@ -281,7 +284,7 @@ class Public_dataset(Dataset):
         if self.if_prompt:
             # Assuming get_first_prompt and get_top_boxes functions are defined and handle prompt creation
             if self.prompt_type == 'point':
-                points = get_first_prompt(msk.numpy()[0],sample_num=self.sample_num)
+                points = get_first_prompt(msk.numpy()[0],sample_num=self.sample_num, neg_prompt_ratio=self.neg_prompt_ratio)
                 output.update({'points': points})
             elif self.prompt_type == 'box':
                 boxes = get_top_boxes(msk.numpy()[0])

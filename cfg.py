@@ -200,9 +200,15 @@ def parse_args():
                     help='Dataset phase.')
 
     # Number of points to sample for prompt generation
-    parser.add_argument('--sample_num', type=int, default=50,
+    parser.add_argument('--sample_num', type=int, default=3,
                     help='Number of points to sample for prompt generation.')
+
+    # Ratio of negative points to positive points (e.g., 0.5 means half as many negative points as positive points)
+    parser.add_argument('--neg_prompt_ratio', type=float, default=0.0,
+                    help='Ratio of negative points to positive points.')
     
+    
+
     #second round of optional cropping after transforms
     parser.add_argument('--crop', action=argparse.BooleanOptionalAction, default=False,
                     help='Enable random crop after transforms.')

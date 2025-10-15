@@ -9,7 +9,7 @@ from typing import Tuple, Optional
 def get_first_prompt(mask_cls: np.ndarray, 
                      dist_thre_ratio: float = 0.2,
                      sample_num: int = 5,
-                     neg_prompt_ratio: float = 0.3,
+                     neg_prompt_ratio: float = 0.0,
                      max_points_ratio: float = 0.5) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Generate point prompts for each blob in the mask.
