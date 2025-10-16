@@ -1,7 +1,10 @@
 from finetune_sam_slim.cfg import parse_args
 from finetune_sam_slim.utils.dataset import Public_dataset
 
-
+import pickle
+from matplotlib import colors as mcolors
+from matplotlib.gridspec import GridSpec
+from matplotlib.patches import Patch
 
 # finetune_sam_slim/utils/check2.py
 from pathlib import Path
@@ -22,7 +25,25 @@ def denorm(img: torch.Tensor):
     # img: (3,H,W) normalized -> (H,W,3) [0,1]
     return ((img * IMAGENET_STD) + IMAGENET_MEAN).clamp(0,1).permute(1,2,0).cpu().numpy()
 
-def viz_points_batches(item: dict, save_path: Path | None = None, show: bool = True):
+# ADD (helper to read {name:id} → {id:name})
+def _load_id_to_name(label_mapping_path: str | None):
+    id_to_name = {}
+    if not label_mapping_path:
+        return id_to_name
+    try:
+        with open(label_mapping_path, 'rb') as h:
+            mapping = pickle.load(h)
+        if isinstance(mapping, dict):
+            name_to_id = mapping
+        else:
+            # allow list of (name, id) pairs
+            name_to_id = {k: v for k, v in mapping}
+        id_to_name = {int(v): str(k) for k, v in name_to_id.items()}
+    except Exception:
+        pass
+    return id_to_name
+
+def viz_points_batches(item: dict, save_path: Path | None = None, show: bool = True, label_mapping_path: str | None = None,):
 
 # check if boxes and points exists in the dataset dict
     has_points = ("points" in item)
@@ -31,7 +52,17 @@ def viz_points_batches(item: dict, save_path: Path | None = None, show: bool = T
         raise RuntimeError("Item has neither 'points' nor 'boxes'.")
     img = item["image"]                  # (3,H,W)
     img_np = denorm(img)
+    orig_img = item["orig_img"]
+    orig_img_np = orig_img.permute(1,2,0).cpu().numpy()
     msk_np = item["mask"].squeeze(0).cpu().numpy()
+    orig_msk_np = item["orig_mask"].squeeze(0).cpu().numpy()
+
+    K = int(max(
+        msk_np.max() if msk_np.size else 0,
+        orig_msk_np.max() if orig_msk_np.size else 0
+    ))
+    norm = mcolors.Normalize(vmin=0, vmax=max(1, K))
+    cmap = plt.cm.get_cmap('viridis', max(2, K + 1))
 
 #point extraction
     if has_points:
@@ -51,11 +82,15 @@ def viz_points_batches(item: dict, save_path: Path | None = None, show: bool = T
     B = max(B_pts, B_box, 1)
 
     # dynamic grid
+    # dynamic grid
     cols = min(6, max(1, math.ceil(math.sqrt(B))))
     rows = math.ceil(B / cols)
 
-    fig, axes = plt.subplots(rows, cols, figsize=(5*cols, 5*rows))
-    axes = axes.ravel() if isinstance(axes, (list, tuple)) or hasattr(axes, "ravel") else [axes]
+    # REPLACE: use GridSpec to add a larger panel on the right
+    fig = plt.figure(figsize=(5*cols + 6, 5*rows))
+    gs = GridSpec(rows, cols + 1, width_ratios=[1]*cols + [1.6], figure=fig)
+    axes = [fig.add_subplot(gs[r, c]) for r in range(rows) for c in range(cols)]
+    ax_big = fig.add_subplot(gs[:, -1])
 
     # marker styles per label
     # -1: cross, 0: hollow circle, 1: solid square
@@ -75,7 +110,7 @@ def viz_points_batches(item: dict, save_path: Path | None = None, show: bool = T
 
         ax.imshow(img_np, origin="upper")
         masked = np.ma.masked_where(msk_np == 0, msk_np)
-        ax.imshow(masked, cmap="viridis", alpha=0.35, interpolation="nearest")
+        ax.imshow(masked, cmap=cmap, norm=norm, alpha=0.35, interpolation="nearest")
         if has_points and b < B_pts:
             P = prompts[b]  # (N,2)
             L = labels[b]   # (N,)
@@ -103,6 +138,22 @@ def viz_points_batches(item: dict, save_path: Path | None = None, show: bool = T
             ax.set_title(f"batch {b}  (+:{c1}  0:{c0}  -1:{c_m1})", fontsize=9)
         else:
             ax.set_title(f"batch {b}", fontsize=9)
+
+    ax_big.axis("off")
+    ax_big.imshow(orig_img_np, origin="upper")
+    masked_big = np.ma.masked_where(orig_msk_np == 0, orig_msk_np)
+    ax_big.imshow(masked_big, cmap=cmap, norm=norm, alpha=0.20, interpolation="nearest")
+    ax_big.set_title("Resized image + mask (transparent)", fontsize=11)
+
+    # --- Class legend using label_mapping; only show classes present ---
+    id_to_name = _load_id_to_name(label_mapping_path)
+    present = sorted(int(c) for c in np.unique(orig_msk_np) if c != 0)
+    legend_elems2 = [
+        Patch(facecolor=cmap(norm(cid)), edgecolor='k', label=id_to_name.get(cid, f"class {cid}"))
+        for cid in present
+    ]
+    if legend_elems2:
+        ax_big.legend(handles=legend_elems2, loc='lower right', frameon=True, title="Classes")
 
     # legend
     legend_elems = [
@@ -143,7 +194,13 @@ def main():
     )
     item = dataset[1]
     print(item["mask"].shape)
-    viz_points_batches(item, save_path=None, show=True)
+    viz_points_batches(
+        item,
+        save_path=args.save_path,
+        show=True,
+        label_mapping_path=args.label_mapping,   
+    )
+
 
 if __name__ == "__main__":
     main()

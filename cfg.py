@@ -180,11 +180,12 @@ def parse_args():
     parser.add_argument('--outer_cfg', type=Path, default=Path("C:/Users/Jan Karl Forstner/git_repo/cfg.py"),
                         help='Path to parent env cfg.py to inherit ann_dir/labels_file/label_map_file.')
     
-
+#----------------------------------------------------------------------------------------------
 # -----------------------dataset args begin----------------------------------------------------
+# ---------------------------------------------------------------------------------------------
 
     # chooses the classes we want to assign prompts to: 
-    parser.add_argument('--targets', type=str, default="multi_all",
+    parser.add_argument('--targets', type=str, default=["bad"],
                     help='List of target class names or special tokens: "combine_all","multi_all",custom labels')
 
     # dataset label mapping file (label_mapping.pkl), also the dataset argument for Public_dataset class
@@ -207,7 +208,7 @@ def parse_args():
     parser.add_argument('--neg_prompt_ratio', type=float, default=0.0,
                     help='Ratio of negative points to positive points.')
     
-    
+
 
     #second round of optional cropping after transforms
     parser.add_argument('--crop', action=argparse.BooleanOptionalAction, default=False,
@@ -218,7 +219,7 @@ def parse_args():
                     help='Crop size used when --crop is enabled.')
     
     # -1 ignores the argument, any other number looks for the corresponding class and creates a binary semantic clasification
-    parser.add_argument('--cls', type=int, default=-1,
+    parser.add_argument('--cls', type=int, default=1,
                     help='If >0, use this single class id for a binary mask.')
 
     # define if prompts are to be used for training: points are class agnostic
@@ -240,6 +241,14 @@ def parse_args():
                         help='Filter out items with empty/irrelevant masks.')
     
 
+# ----------------------------------------------------------------------------------------------
+    # prompt and mask check utility (sam-slim-check)
+# ----------------------------------------------------------------------------------------------
+
+    parser.add_argument('--save_path', type=Path, default=None,
+                    help='Path to save the prompt visualization (default: <img_name>_points_batches.png).')
+
+    
 
 # ---------------- training args for the sam finetuning ------------------------------------------------------------
     parser.add_argument('--finetune_type', type=str, default='peft',

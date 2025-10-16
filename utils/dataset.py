@@ -198,19 +198,29 @@ class Public_dataset(Dataset):
         img = transforms.Resize((self.args.image_size, self.args.image_size))(img)
         msk = transforms.Resize((self.args.image_size, self.args.image_size),
                                 InterpolationMode.NEAREST)(msk)
+        
+        # --- Branch originals here (no further augments on these) ---
+        orig_img_pil = img.copy()
+        orig_msk_pil = msk.copy()
 
         # Apply crop/aug; returns (torch image, numpy mask)
         img, msk = self.apply_transformations(img, msk)
 
         # Optional target mapping (kept as before, but mask stays NumPy)
-        if 'combine_all' in self.targets:          # binary foreground
+        if self.cls > 0:
+            msk = (np.array(msk, dtype=int) == self.cls).astype(int)
+            orig_np = (np.array(orig_msk_pil, dtype=int) == self.cls).astype(int)
+        elif 'combine_all' in self.targets:          # binary foreground
             msk = (np.array(msk, dtype=int) > 0).astype(int)
+            orig_np = (np.array(orig_msk_pil, dtype=int) > 0).astype(int)
         elif 'multi_all' in self.targets:
             msk = np.array(msk, dtype=int)
-        # refactors thefound classes in the targets list -> what was once a list of [class2,class4,class1] gets refactored to [class1,class2,class3]
+            orig_np = np.array(orig_msk_pil, dtype=int)
+        # refactors the found classes in the targets list -> what was once a list of [class2,class4,class1] gets refactored to [class1,class2,class3]
         # creation of a brand new multiclass mask with new class values. Num_classes then are the len of the refactored target list + 1 for background
         elif isinstance(self.targets, (list, tuple)) and any(t in self.segment_names_to_labels for t in self.targets):
             arr = np.array(msk, dtype=int)
+            arr_orig = np.array(orig_msk_pil, dtype=int)
             seen, selected_ids = set(), []
             for t in self.targets:
                 if t in self.segment_names_to_labels:
@@ -226,11 +236,25 @@ class Public_dataset(Dataset):
                 lut[cid] = k
 
             msk = lut[arr]
-            msk = (np.array(msk, dtype=int) == self.cls).astype(int)
+            orig_np = lut[arr_orig]
         else:
             msk = np.array(msk, dtype=int)
+            orig_np = np.array(orig_msk_pil, dtype=int)
 
-        return self.prepare_output(img, msk, img_path, mask_path)
+        out =  self.prepare_output(img, msk, img_path, mask_path)
+
+        # --- Add originals: unnormalized image tensor [0,1] and mapped mask (1,H,W) ---
+        orig_img_t = transforms.ToTensor()(orig_img_pil)                 # (3,H,W), float in [0,1]
+        orig_msk_t = torch.tensor(orig_np, dtype=torch.long)
+        if orig_msk_t.ndim == 2:
+            orig_msk_t = orig_msk_t.unsqueeze(0)   
+
+        out.update({
+        'orig_img': orig_img_t,
+        'orig_mask': orig_msk_t,
+        })
+
+        return out
     
     def apply_transformations(self, img, msk):
     # If cropping is enabled, keep using your existing apply_crop
